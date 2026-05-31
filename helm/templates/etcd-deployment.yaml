@@ -16,21 +16,40 @@ spec:
         io.kompose.service: etcd
     spec:
       containers:
-        - env:
-            - name: ALLOW_NONE_AUTHENTICATION
-              value: "yes"
-            - name: ETCD_ADVERTISE_CLIENT_URLS
-              value: "http://localhost:{{ .Values.etcd.port }}"
+        - command:
+            - /usr/local/bin/etcd
+          args:
+            - --name=etcd
+            - --data-dir=/etcd-data
+            - --listen-client-urls=http://0.0.0.0:{{ .Values.etcd.port }}
+            - --advertise-client-urls=http://etcd:{{ .Values.etcd.port }}
+            - --listen-peer-urls=http://0.0.0.0:{{ .Values.etcd.peerPort }}
+            - --initial-advertise-peer-urls=http://localhost:{{ .Values.etcd.peerPort }}
+            - --initial-cluster=etcd=http://localhost:{{ .Values.etcd.peerPort }}
+            - --initial-cluster-state=new
+            - --log-level=info
+            - --logger=zap
+            - --log-outputs=stderr
           image: "{{ .Values.etcd.imageName }}"
+          imagePullPolicy: {{ .Values.etcd.imagePullPolicy }}
           name: etcd
           ports:
-            - containerPort: {{ int .Values.etcd.port }}
+            - name: client
+              containerPort: {{ int .Values.etcd.port }}
+            - name: peer
+              containerPort: {{ int .Values.etcd.peerPort }}
           resources: 
               requests:
                 memory: {{ .Values.etcd.requests.memory }}
                 cpu: {{ .Values.etcd.requests.cpu }}
               limits:
                 memory: {{ .Values.etcd.limits.memory }}
-                cpu: {{ .Values.etcd.requests.cpu }}
+                cpu: {{ .Values.etcd.limits.cpu }}
+          volumeMounts:
+            - mountPath: /etcd-data
+              name: data
       restartPolicy: Always
+      volumes:
+        - name: data
+          emptyDir: {}
 status: {}

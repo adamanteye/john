@@ -8,7 +8,7 @@ import (
 
 	"github.com/magnusfurugard/multi-john/worker/john"
 	"github.com/magnusfurugard/multi-john/worker/node"
-	"go.etcd.io/etcd/clientv3"
+	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
 )
 
@@ -28,7 +28,7 @@ func New(logger *zap.Logger, cli *clientv3.Client, johnFile string, johnFlags st
 	if err != nil {
 		sugar.Errorf("Unable to start node: %v", err)
 		cli.Close()
-		os.Exit(1)
+		return err
 	}
 
 	// Configure john
@@ -37,7 +37,11 @@ func New(logger *zap.Logger, cli *clientv3.Client, johnFile string, johnFlags st
 	if len(fl[0]) > 0 {
 		for _, flag := range fl {
 			f := strings.SplitN(flag, "=", 2)
-			flags[f[0]] = f[1]
+			value := ""
+			if len(f) == 2 {
+				value = f[1]
+			}
+			flags[f[0]] = value
 			sugar.Info(flags)
 		}
 	}

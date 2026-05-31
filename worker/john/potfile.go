@@ -1,8 +1,8 @@
 package john
 
 import (
-	"io/ioutil"
 	"log"
+	"os"
 	"strings"
 	"time"
 
@@ -22,7 +22,7 @@ func (c *Cmd) WatchPotfile() {
 			case <-c.KillChan:
 				c.Log.Info("got kill signal, stop watching potfile")
 				watcher.Close()
-				break
+				return
 			case event, ok := <-watcher.Events:
 				if !ok {
 					return
@@ -35,7 +35,7 @@ func (c *Cmd) WatchPotfile() {
 				if !ok {
 					return
 				}
-				c.Log.Errorf("error:", err)
+				c.Log.Error(err)
 			}
 		}
 	}()
@@ -46,17 +46,19 @@ func (c *Cmd) WatchPotfile() {
 			break
 		}
 		c.Log.Infof("waiting for file to be created...")
-		time.Sleep(time.Duration(1) * time.Second)
+		time.Sleep(time.Second)
 	}
 }
 
 func (c *Cmd) ReadPotfile() []string {
-	b, err := ioutil.ReadFile(potFile)
+	b, err := os.ReadFile(potFile)
 	if err != nil {
 		c.Log.Error(err)
 	}
 
-	s := string(b)
-	re := strings.Split(s, "\n")
-	return re[:len(re)-1]
+	s := strings.TrimSuffix(string(b), "\n")
+	if s == "" {
+		return nil
+	}
+	return strings.Split(s, "\n")
 }

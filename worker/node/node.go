@@ -9,7 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/magnusfurugard/multi-john/worker/john"
-	"go.etcd.io/etcd/clientv3"
+	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
 )
 
@@ -132,9 +132,9 @@ func (n *Node) heartbeat(key string, value string) error {
 }
 
 func (n *Node) keepAlive(key string, value string) {
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 	jitter := func() int64 {
-		rand.Seed(time.Now().UnixNano())
-		return rand.Int63n(timeoutSeconds / 2)
+		return rng.Int63n(timeoutSeconds / 2)
 	}
 	for {
 		n.Log.Debugf("sending heartbeat for %v=%v", key, value)

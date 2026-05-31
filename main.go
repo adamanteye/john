@@ -10,7 +10,7 @@ import (
 
 	"github.com/magnusfurugard/multi-john/howdy"
 	"github.com/magnusfurugard/multi-john/worker"
-	"go.etcd.io/etcd/clientv3"
+	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -90,7 +90,7 @@ func main() {
 		sugar.Panicf("`%v` is not a valid mode", mode)
 	}
 
-	termChan := make(chan os.Signal)
+	termChan := make(chan os.Signal, 1)
 	signal.Notify(termChan, syscall.SIGINT, syscall.SIGTERM)
 	<-termChan
 }

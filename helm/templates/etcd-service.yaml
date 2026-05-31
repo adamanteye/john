@@ -6,9 +6,12 @@ metadata:
   name: etcd
 spec:
   ports:
-    - name: "{{ .Values.etcd.port }}"
+    - name: client
       port: {{ .Values.etcd.port }}
-      targetPort: {{ .Values.etcd.port }}
+      targetPort: client
+    - name: peer
+      port: {{ .Values.etcd.peerPort }}
+      targetPort: peer
   selector:
     io.kompose.service: etcd
 status:

@@ -24,7 +24,7 @@ spec:
             - name: ETCD_ADVERTISE_CLIENT_URLS
               value: "etcd:{{ .Values.etcd.port }}"
           image: "{{ .Values.multijohn.imageName }}"
-          imagePullPolicy: Always
+          imagePullPolicy: {{ .Values.multijohn.imagePullPolicy }}
           name: howdy
           ports:
             - containerPort: {{ int .Values.multijohn.howdy.port }}

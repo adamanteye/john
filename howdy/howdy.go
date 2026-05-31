@@ -12,7 +12,7 @@ import (
 	"sync"
 	"syscall"
 
-	"go.etcd.io/etcd/clientv3"
+	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
 )
 
@@ -103,19 +103,25 @@ func (s *Server) Serve() {
 					j, _ = json.Marshal(map[string]string{"error": "no active session"})
 					s.log.Warn("found no valid session")
 				}
-				w.Write(j)
+				if _, err := w.Write(j); err != nil {
+					s.log.Error(err)
+				}
 				s.log.Debugf("served %v", string(j))
 			default:
 				w.WriteHeader(http.StatusMethodNotAllowed)
-				fmt.Fprintf(w, "nothing here dude")
+				if _, err := fmt.Fprintf(w, "nothing here dude"); err != nil {
+					s.log.Error(err)
+				}
 				s.log.Info("bad request")
 			}
 		}
 		http.HandleFunc("/", handler)
 		s.log.Infof("serving on port %v", s.port)
-		http.ListenAndServe(fmt.Sprintf(":%v", s.port), nil)
+		if err := http.ListenAndServe(fmt.Sprintf(":%v", s.port), nil); err != nil {
+			s.log.Error(err)
+		}
 	}()
-	termChan := make(chan os.Signal)
+	termChan := make(chan os.Signal, 1)
 	signal.Notify(termChan, syscall.SIGINT, syscall.SIGTERM)
 	<-termChan
 	s.log.Info("stopping howdy")

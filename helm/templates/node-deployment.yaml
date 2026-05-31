@@ -30,7 +30,7 @@ spec:
             - name: TOTAL_NODES
               value: "{{ .Values.multijohn.totalNodes }}"
           image: "{{ .Values.multijohn.imageName }}"
-          imagePullPolicy: Always
+          imagePullPolicy: {{ .Values.multijohn.imagePullPolicy }}
           name: node
           resources:
             requests:

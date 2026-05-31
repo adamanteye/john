@@ -37,7 +37,11 @@ func New(bin string, file string, flags map[string]string, logger *zap.Logger) C
 func (c *Cmd) args() []string {
 	res := []string{c.File, potFlag}
 	for k, v := range c.Flags {
-		res = append(res, fmt.Sprintf("%v=%v", k, v))
+		if v == "" {
+			res = append(res, k)
+		} else {
+			res = append(res, fmt.Sprintf("%v=%v", k, v))
+		}
 		c.Log.Debug(res)
 	}
 	return res
@@ -48,7 +52,13 @@ func (c *Cmd) showArgs() []string {
 }
 
 func (c *Cmd) Run() error {
-	os.Create(potFile)
+	f, err := os.Create(potFile)
+	if err != nil {
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
 	c.WatchPotfile()
 	cmd := exec.Command(c.Bin, c.args()...)
 

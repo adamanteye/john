@@ -1,6 +1,13 @@
 # Helm chart for multi-john
 Using this helm chart, you can run multi-john on a Kubernetes cluster. Based on `kompose` originally (some unnecessary remnants probably remain in manifests under `templates`).
 
+## Images
+By default, the chart pins the current published multi-john image, `praktiskt/multi-john:bf184dba2942cda128b07e46bd54e13e30094c4f`, instead of the floating `latest` tag.
+
+The embedded coordination store uses the official etcd image `quay.io/coreos/etcd:v3.6.11`.
+
+Openwall's `ghcr.io/openwall/john` images contain John the Ripper itself; they are not a drop-in replacement for `multijohn.imageName` because the chart container must also include the `multijohn` wrapper binary.
+
 ## Usage
 ### tldr
 ```shell

@@ -1,8 +1,11 @@
 name: multi-john
 description: A Helm Chart for multi-john.
-version: 0.0.1
+version: 0.1.0
+appVersion: "bf184dba2942cda128b07e46bd54e13e30094c4f"
 apiVersion: v1
 keywords:
   - multi-john
 sources:
-home:
+  - https://github.com/praktiskt/multi-john
+  - https://github.com/openwall/john
+home: https://github.com/praktiskt/multi-john
