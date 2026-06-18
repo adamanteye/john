@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
@@ -31,6 +33,19 @@ type Node struct {
 type UIConfig struct {
 	DefaultJohnFlags  string `json:"defaultJohnFlags"`
 	DefaultTotalNodes int32  `json:"defaultTotalNodes"`
+}
+
+type WorkListing struct {
+	Path    string      `json:"path"`
+	Entries []WorkEntry `json:"entries"`
+}
+
+type WorkEntry struct {
+	Name       string     `json:"name"`
+	Path       string     `json:"path"`
+	Directory  bool       `json:"directory"`
+	Size       int64      `json:"size"`
+	ModifiedAt *time.Time `json:"modifiedAt,omitempty"`
 }
 
 func New(port int, logger *zap.Logger, etcd *clientv3.Client, controller *Controller) Server {
@@ -82,6 +97,7 @@ func (s *Server) Serve() {
 	mux.HandleFunc("/api/config", s.handleConfig)
 	mux.HandleFunc("/api/results", s.handleResults)
 	mux.HandleFunc("/api/jobs", s.handleJobs)
+	mux.HandleFunc("/api/work", s.handleWork)
 
 	s.log.Infof("serving on port %v", s.port)
 	if err := http.ListenAndServe(fmt.Sprintf(":%v", s.port), mux); err != nil {
@@ -158,10 +174,55 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) handleWork(w http.ResponseWriter, r *http.Request) {
+	if s.controller == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "kubernetes controller is unavailable"})
+		return
+	}
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	listing, err := s.controller.ListWork()
+	if err != nil {
+		s.log.Error(err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, listing)
+}
+
 func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(value); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+func (c *Controller) ListWork() (WorkListing, error) {
+	workPath := strings.TrimSpace(c.config.WorkPath)
+	if workPath == "" {
+		workPath = "/work"
+	}
+	dirEntries, err := os.ReadDir(workPath)
+	if err != nil {
+		return WorkListing{}, fmt.Errorf("list %s: %w", workPath, err)
+	}
+	entries := make([]WorkEntry, 0, len(dirEntries))
+	for _, entry := range dirEntries {
+		info, err := entry.Info()
+		if err != nil {
+			return WorkListing{}, fmt.Errorf("stat %s/%s: %w", workPath, entry.Name(), err)
+		}
+		modifiedAt := info.ModTime()
+		entries = append(entries, WorkEntry{
+			Name:       entry.Name(),
+			Path:       workPath + "/" + entry.Name(),
+			Directory:  entry.IsDir(),
+			Size:       info.Size(),
+			ModifiedAt: &modifiedAt,
+		})
+	}
+	return WorkListing{Path: workPath, Entries: entries}, nil
 }

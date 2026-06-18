@@ -1,6 +1,7 @@
 package howdy
 
 import (
+	"os"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -156,6 +157,43 @@ func TestJobSpecOmitsEmptyResourceLimits(t *testing.T) {
 	}
 }
 
+func TestListWorkReturnsTopLevelEntries(t *testing.T) {
+	workDir := t.TempDir()
+	if err := os.WriteFile(workDir+"/dictionary.txt", []byte("password\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(workDir+"/rules", 0o700); err != nil {
+		t.Fatal(err)
+	}
+	controller := testController("")
+	controller.config.WorkPath = workDir
+
+	listing, err := controller.ListWork()
+	if err != nil {
+		t.Fatalf("ListWork returned error: %v", err)
+	}
+	if listing.Path != workDir {
+		t.Fatalf("Path = %q, want %q", listing.Path, workDir)
+	}
+	if len(listing.Entries) != 2 {
+		t.Fatalf("got %d entries, want 2: %#v", len(listing.Entries), listing.Entries)
+	}
+	file := workEntryByName(listing.Entries, "dictionary.txt")
+	if file == nil {
+		t.Fatalf("dictionary.txt missing from %#v", listing.Entries)
+	}
+	if file.Directory {
+		t.Fatalf("dictionary.txt marked as directory")
+	}
+	if file.Size != int64(len("password\n")) {
+		t.Fatalf("dictionary.txt size = %d, want %d", file.Size, len("password\n"))
+	}
+	dir := workEntryByName(listing.Entries, "rules")
+	if dir == nil || !dir.Directory {
+		t.Fatalf("rules entry = %#v, want directory", dir)
+	}
+}
+
 func testController(patch string) *Controller {
 	return &Controller{
 		config: ControllerConfig{
@@ -176,6 +214,15 @@ func testController(patch string) *Controller {
 			WorkerPodTemplatePatch: patch,
 		},
 	}
+}
+
+func workEntryByName(entries []WorkEntry, name string) *WorkEntry {
+	for i := range entries {
+		if entries[i].Name == name {
+			return &entries[i]
+		}
+	}
+	return nil
 }
 
 func containerByName(containers []corev1.Container, name string) *corev1.Container {

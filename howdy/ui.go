@@ -186,6 +186,9 @@ const indexHTML = `<!doctype html>
       </div>
     </form>
 
+    <h2>Work</h2>
+    <div id="work"><p class="status">Loading...</p></div>
+
     <h2>Jobs</h2>
     <div id="jobs"><p class="status">Loading...</p></div>
 
@@ -194,6 +197,7 @@ const indexHTML = `<!doctype html>
   </main>
   <script>
     const jobsEl = document.getElementById('jobs');
+    const workEl = document.getElementById('work');
     const resultsEl = document.getElementById('results');
     const statusEl = document.getElementById('formStatus');
     const submitEl = document.getElementById('submit');
@@ -236,6 +240,26 @@ const indexHTML = `<!doctype html>
       }
     }
 
+    async function loadWork() {
+      try {
+        const listing = await request('/api/work');
+        const entries = listing.entries || [];
+        if (!entries.length) {
+          workEl.innerHTML = '<p class="status">' + escapeHTML(listing.path || '/work') + ' is empty.</p>';
+          return;
+        }
+        const rows = entries.map((entry) => {
+          const name = entry.name + (entry.directory ? '/' : '');
+          const size = entry.directory ? '' : formatBytes(entry.size || 0);
+          const modifiedAt = entry.modifiedAt ? new Date(entry.modifiedAt).toLocaleString() : '';
+          return '<tr><td>' + escapeHTML(name) + '</td><td>' + escapeHTML(size) + '</td><td>' + escapeHTML(modifiedAt) + '</td></tr>';
+        }).join('');
+        workEl.innerHTML = '<p class="status">' + escapeHTML(listing.path || '/work') + '</p><table><thead><tr><th>Name</th><th>Size</th><th>Modified</th></tr></thead><tbody>' + rows + '</tbody></table>';
+      } catch (err) {
+        workEl.innerHTML = '<p class="error">' + escapeHTML(err.message) + '</p>';
+      }
+    }
+
     async function loadResults(runID) {
       selectedRunID = runID;
       try {
@@ -260,6 +284,18 @@ const indexHTML = `<!doctype html>
 
     function escapeHTML(value) {
       return String(value).replace(/[&<>"']/g, (char) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[char]));
+    }
+
+    function formatBytes(value) {
+      if (value < 1024) return value + ' B';
+      const units = ['KiB', 'MiB', 'GiB', 'TiB'];
+      let size = value / 1024;
+      let index = 0;
+      while (size >= 1024 && index < units.length - 1) {
+        size /= 1024;
+        index++;
+      }
+      return size.toFixed(size >= 10 ? 1 : 2) + ' ' + units[index];
     }
 
     document.getElementById('jobForm').addEventListener('submit', async (event) => {
@@ -294,13 +330,16 @@ const indexHTML = `<!doctype html>
     });
 
     document.getElementById('refresh').addEventListener('click', async () => {
+      await loadWork();
       await loadJobs();
       if (selectedRunID) await loadResults(selectedRunID);
     });
 
     loadConfig().catch((err) => statusEl.textContent = err.message);
+    loadWork();
     loadJobs();
     setInterval(async () => {
+      await loadWork();
       await loadJobs();
       if (selectedRunID) await loadResults(selectedRunID);
     }, 5000);
