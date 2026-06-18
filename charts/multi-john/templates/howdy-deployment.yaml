@@ -25,7 +25,7 @@ spec:
             - --logLevel={{ .Values.multijohn.logLevel }}
           env:
             - name: ETCD_ADVERTISE_CLIENT_URLS
-              value: "etcd:{{ .Values.etcd.port }}"
+              value: {{ .Values.etcd.clientURL | quote }}
             - name: MULTI_JOHN_NAMESPACE
               valueFrom:
                 fieldRef:

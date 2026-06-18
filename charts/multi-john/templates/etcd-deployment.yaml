@@ -23,11 +23,11 @@ spec:
           args:
             - --name=etcd
             - --data-dir=/etcd-data
-            - --listen-client-urls=http://0.0.0.0:{{ .Values.etcd.port }}
-            - --advertise-client-urls=http://etcd:{{ .Values.etcd.port }}
-            - --listen-peer-urls=http://0.0.0.0:{{ .Values.etcd.peerPort }}
-            - --initial-advertise-peer-urls=http://localhost:{{ .Values.etcd.peerPort }}
-            - --initial-cluster=etcd=http://localhost:{{ .Values.etcd.peerPort }}
+            - {{ printf "--listen-client-urls=%s" .Values.etcd.listenClientURLs | quote }}
+            - {{ printf "--advertise-client-urls=%s" .Values.etcd.advertiseClientURLs | quote }}
+            - {{ printf "--listen-peer-urls=%s" .Values.etcd.listenPeerURLs | quote }}
+            - {{ printf "--initial-advertise-peer-urls=%s" .Values.etcd.initialAdvertisePeerURLs | quote }}
+            - {{ printf "--initial-cluster=%s" .Values.etcd.initialCluster | quote }}
             - --initial-cluster-state=new
             - --log-level=info
             - --logger=zap

@@ -7,7 +7,7 @@ multijohn:
   # Howdy is where you can find your results.
   howdy:
     port: 8080
-    serviceType: NodePort
+    serviceType: ClusterIP
     jobTTLSecondsAfterFinished: 86400
     jobActiveDeadlineSeconds: 86400
   # Jobs created by the web controller run one worker pod per indexed shard.
@@ -32,6 +32,12 @@ etcd:
   imagePullPolicy: IfNotPresent
   port: 2379
   peerPort: 2380
+  clientURL: http://etcd:2379
+  listenClientURLs: http://[::]:2379
+  advertiseClientURLs: http://etcd:2379
+  listenPeerURLs: http://[::]:2380
+  initialAdvertisePeerURLs: http://etcd:2380
+  initialCluster: etcd=http://etcd:2380
   requests:
     memory: "128Mi"
     cpu: "1000m"
