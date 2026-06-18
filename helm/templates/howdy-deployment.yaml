@@ -2,19 +2,22 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   labels:
-    io.kompose.service: howdy
+    app.kubernetes.io/name: multi-john
+    app.kubernetes.io/component: howdy
   name: howdy
 spec:
   replicas: 1
   selector:
     matchLabels:
-      io.kompose.service: howdy
-  strategy: {}
+      app.kubernetes.io/name: multi-john
+      app.kubernetes.io/component: howdy
   template:
     metadata:
       labels:
-        io.kompose.service: howdy
+        app.kubernetes.io/name: multi-john
+        app.kubernetes.io/component: howdy
     spec:
+      serviceAccountName: multi-john-controller
       containers:
         - args:
             - ./multijohn
@@ -23,11 +26,43 @@ spec:
           env:
             - name: ETCD_ADVERTISE_CLIENT_URLS
               value: "etcd:{{ .Values.etcd.port }}"
+            - name: MULTI_JOHN_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: MULTI_JOHN_IMAGE
+              value: "{{ .Values.multijohn.imageName }}"
+            - name: MULTI_JOHN_IMAGE_PULL_POLICY
+              value: "{{ .Values.multijohn.imagePullPolicy }}"
+            - name: MULTI_JOHN_DEFAULT_TOTAL_NODES
+              value: "{{ .Values.multijohn.totalNodes }}"
+            - name: MULTI_JOHN_DEFAULT_JOHN_FLAGS
+              value: "{{ .Values.multijohn.node.johnFlags }}"
+            - name: MULTI_JOHN_LOG_LEVEL
+              value: "{{ .Values.multijohn.logLevel }}"
+            - name: MULTI_JOHN_JOHN_PATH
+              value: "{{ .Values.multijohn.node.johnPath }}"
+            - name: MULTI_JOHN_INPUT_PATH
+              value: "{{ .Values.multijohn.node.johnFile.path }}"
+            - name: MULTI_JOHN_INPUT_FILE
+              value: "{{ .Values.multijohn.node.johnFile.file }}"
+            - name: MULTI_JOHN_JOB_TTL_SECONDS_AFTER_FINISHED
+              value: "{{ .Values.multijohn.howdy.jobTTLSecondsAfterFinished }}"
+            - name: MULTI_JOHN_JOB_ACTIVE_DEADLINE_SECONDS
+              value: "{{ .Values.multijohn.howdy.jobActiveDeadlineSeconds }}"
+            - name: MULTI_JOHN_WORKER_REQUEST_CPU
+              value: "{{ .Values.multijohn.node.requests.cpu }}"
+            - name: MULTI_JOHN_WORKER_REQUEST_MEMORY
+              value: "{{ .Values.multijohn.node.requests.memory }}"
+            - name: MULTI_JOHN_WORKER_LIMIT_CPU
+              value: "{{ .Values.multijohn.node.limits.cpu }}"
+            - name: MULTI_JOHN_WORKER_LIMIT_MEMORY
+              value: "{{ .Values.multijohn.node.limits.memory }}"
           image: "{{ .Values.multijohn.imageName }}"
           imagePullPolicy: {{ .Values.multijohn.imagePullPolicy }}
           name: howdy
           ports:
-            - containerPort: {{ int .Values.multijohn.howdy.port }}
+            - name: http
+              containerPort: {{ int .Values.multijohn.howdy.port }}
           resources: {}
       restartPolicy: Always
-status: {}

@@ -23,7 +23,7 @@ var johnFlags string
 func init() {
 	flag.StringVar(&mode, "mode", "worker", "mode to start in, must be worker or howdy")
 	flag.StringVar(&logLevel, "logLevel", "info", "log level, info or debug")
-	flag.StringVar(&johnFile, "johnFile", "dummy", "the file with hashes to process")
+	flag.StringVar(&johnFile, "johnFile", "hashes", "the file with hashes to process")
 	flag.StringVar(&johnFlags, "johnFlags", "", "a comma-separated list of flags to pass, e.g. --format=raw-sha256,--fork=2")
 }
 
@@ -79,7 +79,11 @@ func main() {
 
 	switch mode {
 	case "howdy":
-		s := howdy.New(8080, logger, cli)
+		controller, err := howdy.NewControllerFromEnv(logger)
+		if err != nil {
+			sugar.Warnf("kubernetes controller unavailable: %v", err)
+		}
+		s := howdy.New(8080, logger, cli, controller)
 		go s.Serve()
 	case "worker":
 		err := worker.New(logger, cli, johnFile, johnFlags)

@@ -5,24 +5,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
-	"os/signal"
 	"strconv"
 	"strings"
-	"sync"
-	"syscall"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
 )
 
 type Server struct {
-	res       Results
-	hold      sync.Mutex
-	port      int
-	sessionID string
-	log       *zap.SugaredLogger
-	etcd      *clientv3.Client
+	port       int
+	log        *zap.SugaredLogger
+	etcd       *clientv3.Client
+	controller *Controller
 }
 
 type Results struct {
@@ -34,35 +28,23 @@ type Node struct {
 	Results []string `json:"results"`
 }
 
-func New(port int, logger *zap.Logger, etcd *clientv3.Client) Server {
+type UIConfig struct {
+	DefaultJohnFlags  string `json:"defaultJohnFlags"`
+	DefaultTotalNodes int32  `json:"defaultTotalNodes"`
+}
+
+func New(port int, logger *zap.Logger, etcd *clientv3.Client, controller *Controller) Server {
 	return Server{
-		port: port,
-		log:  logger.Sugar(),
-		etcd: etcd,
+		port:       port,
+		log:        logger.Sugar(),
+		etcd:       etcd,
+		controller: controller,
 	}
 }
 
-func (s *Server) ValidSession() bool {
-	re, err := s.etcd.KV.Get(context.TODO(), "session/id")
-	if err != nil {
-		s.log.Error(err)
-		return false
-	}
+func (s *Server) GetRun(runID string) Results {
+	re, _ := s.etcd.KV.Get(context.TODO(), "runs/"+runID+"/nodes/", clientv3.WithPrefix())
 	if len(re.Kvs) == 0 {
-		s.log.Warn("no active session found")
-		return false
-	}
-	if string(re.Kvs[0].Value) != s.sessionID {
-		s.log.Infof("found new session %v", string(re.Kvs[0].Value))
-		s.sessionID = string(re.Kvs[0].Value)
-	}
-	return true
-}
-
-func (s *Server) GetCurrent() Results {
-	re, _ := s.etcd.KV.Get(context.TODO(), "session/"+s.sessionID, clientv3.WithPrefix())
-	if len(re.Kvs) == 0 {
-		s.res = Results{}
 		return Results{}
 	}
 
@@ -71,19 +53,22 @@ func (s *Server) GetCurrent() Results {
 		key := string(kv.Key)
 		value := kv.Value
 		p := strings.Split(key, "/")
-		node := Node{}
-		nn, err := strconv.Atoi(p[len(p)-1])
-		if err == nil {
-			node.Status = "alive"
+		if len(p) < 5 {
+			continue
 		}
-		if p[len(p)-1] == "results" {
-			nn, _ = strconv.Atoi(p[len(p)-2])
+		nn, err := strconv.Atoi(p[3])
+		if err != nil {
+			continue
+		}
+		node := r[nn]
+		switch p[4] {
+		case "status":
+			node.Status = string(value)
+		case "results":
 			d := []string{}
-			err := json.Unmarshal(value, &d)
-			if err != nil {
+			if err := json.Unmarshal(value, &d); err != nil {
 				s.log.Error(err)
 			}
-			node.Status = "alive"
 			node.Results = d
 		}
 		r[nn] = node
@@ -92,37 +77,91 @@ func (s *Server) GetCurrent() Results {
 }
 
 func (s *Server) Serve() {
-	go func() {
-		handler := func(w http.ResponseWriter, r *http.Request) {
-			switch r.Method {
-			case "GET":
-				var j []byte
-				if s.ValidSession() {
-					j, _ = json.Marshal(s.GetCurrent())
-				} else {
-					j, _ = json.Marshal(map[string]string{"error": "no active session"})
-					s.log.Warn("found no valid session")
-				}
-				if _, err := w.Write(j); err != nil {
-					s.log.Error(err)
-				}
-				s.log.Debugf("served %v", string(j))
-			default:
-				w.WriteHeader(http.StatusMethodNotAllowed)
-				if _, err := fmt.Fprintf(w, "nothing here dude"); err != nil {
-					s.log.Error(err)
-				}
-				s.log.Info("bad request")
-			}
-		}
-		http.HandleFunc("/", handler)
-		s.log.Infof("serving on port %v", s.port)
-		if err := http.ListenAndServe(fmt.Sprintf(":%v", s.port), nil); err != nil {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", s.handleIndex)
+	mux.HandleFunc("/api/config", s.handleConfig)
+	mux.HandleFunc("/api/results", s.handleResults)
+	mux.HandleFunc("/api/jobs", s.handleJobs)
+
+	s.log.Infof("serving on port %v", s.port)
+	if err := http.ListenAndServe(fmt.Sprintf(":%v", s.port), mux); err != nil {
+		s.log.Error(err)
+	}
+}
+
+func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if _, err := fmt.Fprint(w, indexHTML); err != nil {
+		s.log.Error(err)
+	}
+}
+
+func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	cfg := UIConfig{DefaultJohnFlags: "--format=raw-sha256", DefaultTotalNodes: 5}
+	if s.controller != nil {
+		cfg.DefaultJohnFlags = s.controller.config.DefaultJohnFlags
+		cfg.DefaultTotalNodes = s.controller.config.DefaultTotalNodes
+	}
+	writeJSON(w, http.StatusOK, cfg)
+}
+
+func (s *Server) handleResults(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	runID := strings.TrimSpace(r.URL.Query().Get("runID"))
+	if runID != "" {
+		writeJSON(w, http.StatusOK, s.GetRun(runID))
+		return
+	}
+	writeJSON(w, http.StatusBadRequest, map[string]string{"error": "runID is required"})
+}
+
+func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
+	if s.controller == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "kubernetes controller is unavailable"})
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		jobs, err := s.controller.ListJobs(r.Context())
+		if err != nil {
 			s.log.Error(err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
 		}
-	}()
-	termChan := make(chan os.Signal, 1)
-	signal.Notify(termChan, syscall.SIGINT, syscall.SIGTERM)
-	<-termChan
-	s.log.Info("stopping howdy")
+		writeJSON(w, http.StatusOK, jobs)
+	case http.MethodPost:
+		defer r.Body.Close()
+		var req CreateJobRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
+			return
+		}
+		created, err := s.controller.CreateJob(r.Context(), req)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusCreated, created)
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
+func writeJSON(w http.ResponseWriter, status int, value any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(value); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }

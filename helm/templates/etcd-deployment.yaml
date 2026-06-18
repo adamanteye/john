@@ -2,18 +2,20 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   labels:
-    io.kompose.service: etcd
+    app.kubernetes.io/name: multi-john
+    app.kubernetes.io/component: etcd
   name: etcd
 spec:
   replicas: {{ int .Values.etcd.replicas }}
   selector:
     matchLabels:
-      io.kompose.service: etcd
-  strategy: {}
+      app.kubernetes.io/name: multi-john
+      app.kubernetes.io/component: etcd
   template:
     metadata:
       labels:
-        io.kompose.service: etcd
+        app.kubernetes.io/name: multi-john
+        app.kubernetes.io/component: etcd
     spec:
       containers:
         - command:
@@ -52,4 +54,3 @@ spec:
       volumes:
         - name: data
           emptyDir: {}
-status: {}

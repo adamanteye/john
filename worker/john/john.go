@@ -85,6 +85,7 @@ func (c *Cmd) Run() error {
 	if err := cmd.Run(); err != nil {
 		return err
 	}
+	c.Results <- c.ReadPotfile()
 	c.Log.Debug("finished running john")
 	return nil
 }

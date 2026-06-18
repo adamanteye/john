@@ -1,1 +1,4 @@
-dummy
+.git
+.github
+helm
+*.pot

@@ -1,5 +1,5 @@
 # Helm chart for multi-john
-Using this helm chart, you can run multi-john on a Kubernetes cluster. Based on `kompose` originally (some unnecessary remnants probably remain in manifests under `templates`).
+Using this Helm chart, you can run multi-john on a Kubernetes cluster.
 
 ## Images
 By default, the chart pins the current published multi-john image, `praktiskt/multi-john:bf184dba2942cda128b07e46bd54e13e30094c4f`, instead of the floating `latest` tag.
@@ -11,33 +11,28 @@ Openwall's `ghcr.io/openwall/john` images contain John the Ripper itself; they a
 ## Usage
 ### tldr
 ```shell
-helm install multi-john . \
-    --namespace <namespace> \
-    --set="multijohn.node.johnFile.input=$(echo a5b432ee0307be7fa23aa00461f54eee34ba9d45251b5504567d37a8da339dff | base64)" \
-    --set="multijohn.node.johnFlags=--format=raw-sha256" \
-    --set="multijohn.totalNodes=5"
-kubectl port-forward -n <namespace> howdy-<id> 8080:8080
-curl localhost:8080
+kubectl create namespace <namespace>
+helm install multi-john . --namespace <namespace> --values values.yaml
+kubectl port-forward -n <namespace> service/howdy 8080:8080
 ```
 
 ### How it works
-1. Configure `values.yaml`
-    * `.multijohn.node.johnFile.input` should contain the base64 contents of your file to pass to john. 
-    * Make sure to pass the appropriate `.multijohn.node.johnFlags` to tell john what kind of hash it need to process.
-    * You will probably want to set the `.totalNodes`. The chart will spawn one pod per node specified. 
-2. Install the chart; 
+1. Configure `values.yaml`.
+    * `.multijohn.imageName` is the image used by both the Web UI/controller and worker Jobs.
+    * `.multijohn.totalNodes` is the default shard count shown by the Web UI.
+    * `.multijohn.node.johnFlags` is the default John flag string shown by the Web UI.
+    * `.multijohn.node.requests` and `.multijohn.node.limits` are copied into worker Jobs.
+2. Install the chart.
 ```shell
 kubectl create namespace <namespace>
 helm install <name> . -n <namespace> --values values.yaml
-# Check the Makefile for this too. `make install`
 ```
-3. Port-forward `howdy` and start polling to get results; 
+3. Open the Web UI.
 ```shell
-kubectl port-forward -n <namespace> howdy-<id> 8080:8080
-watch "curl -s localhost:8080 | jq"
+kubectl port-forward -n <namespace> service/howdy 8080:8080
 ```
-4. Once you're satisfied with the results (don't forget to save them), you can uninstall the chart; 
+4. Submit hash input in the UI. The controller creates a Secret for the hash file and an Indexed Job for the workers. Optionally set a node selector such as `nodepool=cpu-workers` to constrain the worker Pods.
+5. Once you're satisfied with the results, uninstall the chart.
 ```shell
 helm uninstall <name> -n <namespace>
-# Check Makefile for this too. `make uninstall`
 ```
