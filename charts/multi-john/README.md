@@ -8,8 +8,6 @@ helm install multi-john ./charts/multi-john -n <namespace> --values charts/multi
 kubectl port-forward -n <namespace> service/howdy 8080:8080
 ```
 
-Default app image: `ghcr.io/adamanteye/multi-john:0.1.3`.
-
 Open `http://localhost:8080` to submit hash input. The controller stores hashes in a Secret and creates an Indexed Job with the requested shard count, parallelism, and optional node selector.
 
 The chart creates a shared workspace PVC by default:

@@ -2,10 +2,6 @@
 
 Kubernetes controller and Web UI for running [John the Ripper](https://github.com/openwall/john) as Indexed Jobs.
 
-## Image
-
-`ghcr.io/adamanteye/multi-john:0.1.3`
-
 ## Deploy
 
 ```shell
