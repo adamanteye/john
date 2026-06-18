@@ -48,8 +48,8 @@ multijohn:
       # Limits are intentionally empty by default. John can burst; memory/cpu
       # limits may kill long-running cracking pods under real workloads.
       limits: {}
-    # This is where to find the john binary in the container. Unless you're building a custom container, there's no reason to change it.
-    johnPath: /jtr/run/john
+    # This is where to find the john binary in the container. The default uses PATH.
+    johnPath: john
     input:
       path: /input
       file: hashes

@@ -163,7 +163,7 @@ func testController(patch string) *Controller {
 			Image:                  "ghcr.io/adamanteye/multi-john:test",
 			ImagePullPolicy:        string(corev1.PullIfNotPresent),
 			EtcdEndpoint:           "etcd:2379",
-			JohnPath:               "/jtr/run/john",
+			JohnPath:               "john",
 			InputPath:              "/input",
 			InputFile:              "hashes",
 			WorkPath:               "/work",

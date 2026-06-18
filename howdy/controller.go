@@ -108,7 +108,7 @@ func controllerConfigFromEnv() ControllerConfig {
 		Image:                   envString("MULTI_JOHN_IMAGE", "multi-john:latest"),
 		ImagePullPolicy:         envString("MULTI_JOHN_IMAGE_PULL_POLICY", string(corev1.PullIfNotPresent)),
 		EtcdEndpoint:            envString("ETCD_ADVERTISE_CLIENT_URLS", "etcd:2379"),
-		JohnPath:                envString("MULTI_JOHN_JOHN_PATH", "/jtr/run/john"),
+		JohnPath:                envString("MULTI_JOHN_JOHN_PATH", "john"),
 		InputPath:               envString("MULTI_JOHN_INPUT_PATH", "/input"),
 		InputFile:               envString("MULTI_JOHN_INPUT_FILE", "hashes"),
 		WorkPath:                envString("MULTI_JOHN_WORK_PATH", "/work"),
