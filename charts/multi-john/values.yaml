@@ -29,7 +29,18 @@ multijohn:
     # Strategic merge patch applied to the generated worker PodTemplateSpec.
     # Useful for affinity, tolerations, priorityClassName, imagePullSecrets,
     # extra volumes, sidecars, or extra env/volumeMounts on the "worker" container.
-    podTemplatePatch: {}
+    podTemplatePatch:
+      spec:
+        topologySpreadConstraints:
+          - maxSkew: 1
+            topologyKey: kubernetes.io/hostname
+            whenUnsatisfiable: ScheduleAnyway
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: multi-john
+                app.kubernetes.io/component: worker
+            matchLabelKeys:
+              - multi-john/run-id
     resources:
       requests:
         memory: "64Mi"

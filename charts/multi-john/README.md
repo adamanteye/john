@@ -34,6 +34,16 @@ multijohn:
   worker:
     podTemplatePatch:
       spec:
+        topologySpreadConstraints:
+          - maxSkew: 1
+            topologyKey: kubernetes.io/hostname
+            whenUnsatisfiable: ScheduleAnyway
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: multi-john
+                app.kubernetes.io/component: worker
+            matchLabelKeys:
+              - multi-john/run-id
         priorityClassName: batch
         affinity:
           nodeAffinity:
