@@ -1,28 +1,45 @@
 multijohn:
   # Common configuration across the entire application.
-  totalNodes: 5
-  imageName: ghcr.io/adamanteye/multi-john:0.1.1
+  imageName: ghcr.io/adamanteye/multi-john:0.1.3
   imagePullPolicy: IfNotPresent
   logLevel: debug
+  # Shared workspace mounted into the controller and every worker Job at /work.
+  # Use a ReadWriteMany-capable StorageClass or set existingClaim to a PVC you manage.
+  work:
+    enabled: true
+    name: multi-john-work
+    existingClaim: ""
+    mountPath: /work
+    accessModes:
+      - ReadWriteMany
+    size: 10Gi
+    storageClassName: ""
+    annotations: {}
   # Howdy is where you can find your results.
   howdy:
     port: 8080
     serviceType: ClusterIP
+    # UI/controller defaults only. Each run still submits its own values.
+    defaultTotalNodes: 5
+    defaultJohnFlags: ""
     jobTTLSecondsAfterFinished: 86400
     jobActiveDeadlineSeconds: 86400
-  # Jobs created by the web controller run one worker pod per indexed shard.
-  node:
-    requests:
-      memory: "64Mi"
-      cpu: "250m"
-    limits:
-      memory: "128Mi"
-      cpu: "500m"
-    # This is where you specify what flags (comma-separated) to pass to john. This includes what kind of hashes are part of johnFile.
-    johnFlags: --format=raw-sha256
+  # Worker pod defaults for Jobs created by the controller.
+  worker:
+    # Strategic merge patch applied to the generated worker PodTemplateSpec.
+    # Useful for affinity, tolerations, priorityClassName, imagePullSecrets,
+    # extra volumes, sidecars, or extra env/volumeMounts on the "worker" container.
+    podTemplatePatch: {}
+    resources:
+      requests:
+        memory: "64Mi"
+        cpu: "250m"
+      # Limits are intentionally empty by default. John can burst; memory/cpu
+      # limits may kill long-running cracking pods under real workloads.
+      limits: {}
     # This is where to find the john binary in the container. Unless you're building a custom container, there's no reason to change it.
     johnPath: /jtr/run/john
-    johnFile:
+    input:
       path: /input
       file: hashes
 etcd:

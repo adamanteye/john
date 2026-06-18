@@ -105,7 +105,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	cfg := UIConfig{DefaultJohnFlags: "--format=raw-sha256", DefaultTotalNodes: 5}
+	cfg := UIConfig{DefaultJohnFlags: "", DefaultTotalNodes: 5}
 	if s.controller != nil {
 		cfg.DefaultJohnFlags = s.controller.config.DefaultJohnFlags
 		cfg.DefaultTotalNodes = s.controller.config.DefaultTotalNodes

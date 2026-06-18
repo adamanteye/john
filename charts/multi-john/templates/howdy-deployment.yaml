@@ -35,29 +35,37 @@ spec:
             - name: MULTI_JOHN_IMAGE_PULL_POLICY
               value: "{{ .Values.multijohn.imagePullPolicy }}"
             - name: MULTI_JOHN_DEFAULT_TOTAL_NODES
-              value: "{{ .Values.multijohn.totalNodes }}"
+              value: "{{ .Values.multijohn.howdy.defaultTotalNodes }}"
             - name: MULTI_JOHN_DEFAULT_JOHN_FLAGS
-              value: "{{ .Values.multijohn.node.johnFlags }}"
+              value: {{ .Values.multijohn.howdy.defaultJohnFlags | quote }}
             - name: MULTI_JOHN_LOG_LEVEL
               value: "{{ .Values.multijohn.logLevel }}"
             - name: MULTI_JOHN_JOHN_PATH
-              value: "{{ .Values.multijohn.node.johnPath }}"
+              value: "{{ .Values.multijohn.worker.johnPath }}"
             - name: MULTI_JOHN_INPUT_PATH
-              value: "{{ .Values.multijohn.node.johnFile.path }}"
+              value: "{{ .Values.multijohn.worker.input.path }}"
             - name: MULTI_JOHN_INPUT_FILE
-              value: "{{ .Values.multijohn.node.johnFile.file }}"
+              value: "{{ .Values.multijohn.worker.input.file }}"
+            {{- if .Values.multijohn.work.enabled }}
+            - name: MULTI_JOHN_WORK_PATH
+              value: {{ .Values.multijohn.work.mountPath | quote }}
+            - name: MULTI_JOHN_WORK_PVC_NAME
+              value: {{ default .Values.multijohn.work.name .Values.multijohn.work.existingClaim | quote }}
+            {{- end }}
             - name: MULTI_JOHN_JOB_TTL_SECONDS_AFTER_FINISHED
               value: "{{ .Values.multijohn.howdy.jobTTLSecondsAfterFinished }}"
             - name: MULTI_JOHN_JOB_ACTIVE_DEADLINE_SECONDS
               value: "{{ .Values.multijohn.howdy.jobActiveDeadlineSeconds }}"
             - name: MULTI_JOHN_WORKER_REQUEST_CPU
-              value: "{{ .Values.multijohn.node.requests.cpu }}"
+              value: {{ .Values.multijohn.worker.resources.requests.cpu | quote }}
             - name: MULTI_JOHN_WORKER_REQUEST_MEMORY
-              value: "{{ .Values.multijohn.node.requests.memory }}"
+              value: {{ .Values.multijohn.worker.resources.requests.memory | quote }}
             - name: MULTI_JOHN_WORKER_LIMIT_CPU
-              value: "{{ .Values.multijohn.node.limits.cpu }}"
+              value: {{ default "" .Values.multijohn.worker.resources.limits.cpu | quote }}
             - name: MULTI_JOHN_WORKER_LIMIT_MEMORY
-              value: "{{ .Values.multijohn.node.limits.memory }}"
+              value: {{ default "" .Values.multijohn.worker.resources.limits.memory | quote }}
+            - name: MULTI_JOHN_WORKER_POD_TEMPLATE_PATCH
+              value: {{ .Values.multijohn.worker.podTemplatePatch | default dict | toJson | quote }}
           image: "{{ .Values.multijohn.imageName }}"
           imagePullPolicy: {{ .Values.multijohn.imagePullPolicy }}
           name: howdy
@@ -65,4 +73,15 @@ spec:
             - name: http
               containerPort: {{ int .Values.multijohn.howdy.port }}
           resources: {}
+          {{- if .Values.multijohn.work.enabled }}
+          volumeMounts:
+            - name: work
+              mountPath: {{ .Values.multijohn.work.mountPath | quote }}
+          {{- end }}
       restartPolicy: Always
+      {{- if .Values.multijohn.work.enabled }}
+      volumes:
+        - name: work
+          persistentVolumeClaim:
+            claimName: {{ default .Values.multijohn.work.name .Values.multijohn.work.existingClaim | quote }}
+      {{- end }}

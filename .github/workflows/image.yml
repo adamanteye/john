@@ -14,3 +14,4 @@ jobs:
       name: ${{ github.event.repository.name }}
       label: ${{ github.ref_name }}
       owner: ${{ github.repository_owner }}
+      platforms: "linux/amd64"

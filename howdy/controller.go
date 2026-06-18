@@ -2,6 +2,7 @@ package howdy
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"regexp"
@@ -16,6 +17,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
@@ -23,7 +25,9 @@ import (
 const (
 	appName         = "multi-john"
 	workerComponent = "worker"
+	workerName      = "worker"
 	inputVolumeName = "input"
+	workVolumeName  = "work"
 )
 
 type Controller struct {
@@ -40,6 +44,8 @@ type ControllerConfig struct {
 	JohnPath                string
 	InputPath               string
 	InputFile               string
+	WorkPath                string
+	WorkPVCName             string
 	LogLevel                string
 	DefaultJohnFlags        string
 	DefaultTotalNodes       int32
@@ -49,6 +55,7 @@ type ControllerConfig struct {
 	RequestMemory           string
 	LimitCPU                string
 	LimitMemory             string
+	WorkerPodTemplatePatch  string
 }
 
 type CreateJobRequest struct {
@@ -104,6 +111,8 @@ func controllerConfigFromEnv() ControllerConfig {
 		JohnPath:                envString("MULTI_JOHN_JOHN_PATH", "/jtr/run/john"),
 		InputPath:               envString("MULTI_JOHN_INPUT_PATH", "/input"),
 		InputFile:               envString("MULTI_JOHN_INPUT_FILE", "hashes"),
+		WorkPath:                envString("MULTI_JOHN_WORK_PATH", "/work"),
+		WorkPVCName:             envString("MULTI_JOHN_WORK_PVC_NAME", ""),
 		LogLevel:                envString("MULTI_JOHN_LOG_LEVEL", "info"),
 		DefaultJohnFlags:        envString("MULTI_JOHN_DEFAULT_JOHN_FLAGS", ""),
 		DefaultTotalNodes:       envInt32("MULTI_JOHN_DEFAULT_TOTAL_NODES", 2),
@@ -111,8 +120,9 @@ func controllerConfigFromEnv() ControllerConfig {
 		ActiveDeadlineSeconds:   envInt64("MULTI_JOHN_JOB_ACTIVE_DEADLINE_SECONDS", 86400),
 		RequestCPU:              envString("MULTI_JOHN_WORKER_REQUEST_CPU", "250m"),
 		RequestMemory:           envString("MULTI_JOHN_WORKER_REQUEST_MEMORY", "64Mi"),
-		LimitCPU:                envString("MULTI_JOHN_WORKER_LIMIT_CPU", "500m"),
-		LimitMemory:             envString("MULTI_JOHN_WORKER_LIMIT_MEMORY", "128Mi"),
+		LimitCPU:                envString("MULTI_JOHN_WORKER_LIMIT_CPU", ""),
+		LimitMemory:             envString("MULTI_JOHN_WORKER_LIMIT_MEMORY", ""),
+		WorkerPodTemplatePatch:  envString("MULTI_JOHN_WORKER_POD_TEMPLATE_PATCH", ""),
 	}
 }
 
@@ -174,7 +184,15 @@ func (c *Controller) CreateJob(ctx context.Context, req CreateJobRequest) (Creat
 		return CreatedJob{}, err
 	}
 
-	job, err := c.client.BatchV1().Jobs(c.config.Namespace).Create(ctx, c.jobSpec(req, jobName, secretName, runID, totalNodes, parallelism, ttl, deadline, labels), metav1.CreateOptions{})
+	jobSpec, err := c.jobSpec(req, jobName, secretName, runID, totalNodes, parallelism, ttl, deadline, labels)
+	if err != nil {
+		if deleteErr := c.client.CoreV1().Secrets(c.config.Namespace).Delete(ctx, secretName, metav1.DeleteOptions{}); deleteErr != nil && !apierrors.IsNotFound(deleteErr) {
+			c.log.Error(deleteErr)
+		}
+		return CreatedJob{}, err
+	}
+
+	job, err := c.client.BatchV1().Jobs(c.config.Namespace).Create(ctx, jobSpec, metav1.CreateOptions{})
 	if err != nil {
 		if deleteErr := c.client.CoreV1().Secrets(c.config.Namespace).Delete(ctx, secretName, metav1.DeleteOptions{}); deleteErr != nil && !apierrors.IsNotFound(deleteErr) {
 			c.log.Error(deleteErr)
@@ -192,12 +210,14 @@ func (c *Controller) CreateJob(ctx context.Context, req CreateJobRequest) (Creat
 	return CreatedJob{RunID: runID, JobName: jobName, SecretName: secretName}, nil
 }
 
-func (c *Controller) jobSpec(req CreateJobRequest, jobName, secretName, runID string, totalNodes, parallelism, ttl int32, deadline int64, labels map[string]string) *batchv1.Job {
+func (c *Controller) jobSpec(req CreateJobRequest, jobName, secretName, runID string, totalNodes, parallelism, ttl int32, deadline int64, labels map[string]string) (*batchv1.Job, error) {
 	mode := batchv1.IndexedCompletion
 	backoffLimit := int32(0)
 	inputFile := c.config.InputPath + "/" + c.config.InputFile
+	workerContainer := c.workerContainer(req, inputFile, runID, totalNodes)
+	requiredVolumes := c.workerVolumes(secretName)
 
-	return &batchv1.Job{
+	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      jobName,
 			Namespace: c.config.Namespace,
@@ -216,60 +236,196 @@ func (c *Controller) jobSpec(req CreateJobRequest, jobName, secretName, runID st
 					RestartPolicy: corev1.RestartPolicyNever,
 					NodeSelector:  req.NodeSelector,
 					Containers: []corev1.Container{
-						{
-							Name:            "worker",
-							Image:           c.config.Image,
-							ImagePullPolicy: corev1.PullPolicy(c.config.ImagePullPolicy),
-							Command:         []string{"./multijohn"},
-							Args: []string{
-								"--mode=worker",
-								"--johnFile=" + inputFile,
-								"--johnFlags=" + req.JohnFlags,
-								"--logLevel=" + c.config.LogLevel,
-							},
-							Env: []corev1.EnvVar{
-								{Name: "ETCD_ADVERTISE_CLIENT_URLS", Value: c.config.EtcdEndpoint},
-								{Name: "JOHN_PATH", Value: c.config.JohnPath},
-								{Name: "TOTAL_NODES", Value: strconv.Itoa(int(totalNodes))},
-								{Name: "MULTI_JOHN_RUN_ID", Value: runID},
-								{
-									Name: "MULTI_JOHN_NODE_INDEX",
-									ValueFrom: &corev1.EnvVarSource{
-										FieldRef: &corev1.ObjectFieldSelector{
-											FieldPath: "metadata.annotations['batch.kubernetes.io/job-completion-index']",
-										},
-									},
-								},
-							},
-							Resources:    c.resources(),
-							VolumeMounts: []corev1.VolumeMount{{Name: inputVolumeName, MountPath: c.config.InputPath, ReadOnly: true}},
-						},
+						workerContainer,
 					},
-					Volumes: []corev1.Volume{
-						{
-							Name: inputVolumeName,
-							VolumeSource: corev1.VolumeSource{
-								Secret: &corev1.SecretVolumeSource{SecretName: secretName},
-							},
-						},
-					},
+					Volumes: requiredVolumes,
 				},
 			},
 		},
 	}
+
+	if err := applyPodTemplatePatch(&job.Spec.Template, c.config.WorkerPodTemplatePatch); err != nil {
+		return nil, fmt.Errorf("worker pod template patch: %w", err)
+	}
+	if len(req.NodeSelector) > 0 {
+		if job.Spec.Template.Spec.NodeSelector == nil {
+			job.Spec.Template.Spec.NodeSelector = map[string]string{}
+		}
+		for key, value := range req.NodeSelector {
+			job.Spec.Template.Spec.NodeSelector[key] = value
+		}
+	}
+	ensureWorkerTemplate(&job.Spec.Template, labels, workerContainer, requiredVolumes)
+	return job, nil
+}
+
+func (c *Controller) workerContainer(req CreateJobRequest, inputFile, runID string, totalNodes int32) corev1.Container {
+	volumeMounts := []corev1.VolumeMount{{Name: inputVolumeName, MountPath: c.config.InputPath, ReadOnly: true}}
+	if c.config.WorkPVCName != "" {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{Name: workVolumeName, MountPath: c.config.WorkPath})
+	}
+
+	return corev1.Container{
+		Name:            workerName,
+		Image:           c.config.Image,
+		ImagePullPolicy: corev1.PullPolicy(c.config.ImagePullPolicy),
+		Command:         []string{"./multijohn"},
+		Args: []string{
+			"--mode=worker",
+			"--johnFile=" + inputFile,
+			"--johnFlags=" + req.JohnFlags,
+			"--logLevel=" + c.config.LogLevel,
+		},
+		Env: []corev1.EnvVar{
+			{Name: "ETCD_ADVERTISE_CLIENT_URLS", Value: c.config.EtcdEndpoint},
+			{Name: "JOHN_PATH", Value: c.config.JohnPath},
+			{Name: "TOTAL_NODES", Value: strconv.Itoa(int(totalNodes))},
+			{Name: "MULTI_JOHN_RUN_ID", Value: runID},
+			{
+				Name: "MULTI_JOHN_NODE_INDEX",
+				ValueFrom: &corev1.EnvVarSource{
+					FieldRef: &corev1.ObjectFieldSelector{
+						FieldPath: "metadata.annotations['batch.kubernetes.io/job-completion-index']",
+					},
+				},
+			},
+		},
+		Resources:    c.resources(),
+		VolumeMounts: volumeMounts,
+	}
+}
+
+func (c *Controller) workerVolumes(secretName string) []corev1.Volume {
+	volumes := []corev1.Volume{
+		{
+			Name: inputVolumeName,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{SecretName: secretName},
+			},
+		},
+	}
+	if c.config.WorkPVCName != "" {
+		volumes = append(volumes, corev1.Volume{
+			Name: workVolumeName,
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: c.config.WorkPVCName,
+				},
+			},
+		})
+	}
+	return volumes
+}
+
+func applyPodTemplatePatch(template *corev1.PodTemplateSpec, patch string) error {
+	patch = strings.TrimSpace(patch)
+	if patch == "" || patch == "{}" || patch == "null" {
+		return nil
+	}
+	base, err := json.Marshal(template)
+	if err != nil {
+		return err
+	}
+	patched, err := strategicpatch.StrategicMergePatch(base, []byte(patch), corev1.PodTemplateSpec{})
+	if err != nil {
+		return err
+	}
+	var out corev1.PodTemplateSpec
+	if err := json.Unmarshal(patched, &out); err != nil {
+		return err
+	}
+	*template = out
+	return nil
+}
+
+func ensureWorkerTemplate(template *corev1.PodTemplateSpec, labels map[string]string, requiredContainer corev1.Container, requiredVolumes []corev1.Volume) {
+	if template.Labels == nil {
+		template.Labels = map[string]string{}
+	}
+	for key, value := range labels {
+		template.Labels[key] = value
+	}
+	template.Spec.RestartPolicy = corev1.RestartPolicyNever
+
+	for _, volume := range requiredVolumes {
+		upsertVolume(&template.Spec.Volumes, volume)
+	}
+
+	for i := range template.Spec.Containers {
+		if template.Spec.Containers[i].Name == workerName {
+			ensureWorkerContainer(&template.Spec.Containers[i], requiredContainer)
+			return
+		}
+	}
+	template.Spec.Containers = append([]corev1.Container{requiredContainer}, template.Spec.Containers...)
+}
+
+func ensureWorkerContainer(container *corev1.Container, required corev1.Container) {
+	container.Name = required.Name
+	container.Image = required.Image
+	container.ImagePullPolicy = required.ImagePullPolicy
+	container.Command = required.Command
+	container.Args = required.Args
+	container.Resources = required.Resources
+	for _, env := range required.Env {
+		upsertEnv(&container.Env, env)
+	}
+	for _, mount := range required.VolumeMounts {
+		upsertVolumeMount(&container.VolumeMounts, mount)
+	}
+}
+
+func upsertEnv(envs *[]corev1.EnvVar, required corev1.EnvVar) {
+	for i := range *envs {
+		if (*envs)[i].Name == required.Name {
+			(*envs)[i] = required
+			return
+		}
+	}
+	*envs = append(*envs, required)
+}
+
+func upsertVolumeMount(mounts *[]corev1.VolumeMount, required corev1.VolumeMount) {
+	for i := range *mounts {
+		if (*mounts)[i].Name == required.Name {
+			(*mounts)[i] = required
+			return
+		}
+	}
+	*mounts = append(*mounts, required)
+}
+
+func upsertVolume(volumes *[]corev1.Volume, required corev1.Volume) {
+	for i := range *volumes {
+		if (*volumes)[i].Name == required.Name {
+			(*volumes)[i] = required
+			return
+		}
+	}
+	*volumes = append(*volumes, required)
 }
 
 func (c *Controller) resources() corev1.ResourceRequirements {
-	return corev1.ResourceRequirements{
-		Requests: corev1.ResourceList{
-			corev1.ResourceCPU:    resource.MustParse(c.config.RequestCPU),
-			corev1.ResourceMemory: resource.MustParse(c.config.RequestMemory),
-		},
-		Limits: corev1.ResourceList{
-			corev1.ResourceCPU:    resource.MustParse(c.config.LimitCPU),
-			corev1.ResourceMemory: resource.MustParse(c.config.LimitMemory),
-		},
+	resources := corev1.ResourceRequirements{}
+	if c.config.RequestCPU != "" || c.config.RequestMemory != "" {
+		resources.Requests = corev1.ResourceList{}
+		if c.config.RequestCPU != "" {
+			resources.Requests[corev1.ResourceCPU] = resource.MustParse(c.config.RequestCPU)
+		}
+		if c.config.RequestMemory != "" {
+			resources.Requests[corev1.ResourceMemory] = resource.MustParse(c.config.RequestMemory)
+		}
 	}
+	if c.config.LimitCPU != "" || c.config.LimitMemory != "" {
+		resources.Limits = corev1.ResourceList{}
+		if c.config.LimitCPU != "" {
+			resources.Limits[corev1.ResourceCPU] = resource.MustParse(c.config.LimitCPU)
+		}
+		if c.config.LimitMemory != "" {
+			resources.Limits[corev1.ResourceMemory] = resource.MustParse(c.config.LimitMemory)
+		}
+	}
+	return resources
 }
 
 func (c *Controller) ListJobs(ctx context.Context) ([]JobSummary, error) {
