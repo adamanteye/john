@@ -12,7 +12,7 @@ Openwall's `ghcr.io/openwall/john` images contain John the Ripper itself; they a
 ### tldr
 ```shell
 kubectl create namespace <namespace>
-helm install multi-john . --namespace <namespace> --values values.yaml
+helm install multi-john ./charts/multi-john --namespace <namespace> --values charts/multi-john/values.yaml
 kubectl port-forward -n <namespace> service/howdy 8080:8080
 ```
 
@@ -25,7 +25,7 @@ kubectl port-forward -n <namespace> service/howdy 8080:8080
 2. Install the chart.
 ```shell
 kubectl create namespace <namespace>
-helm install <name> . -n <namespace> --values values.yaml
+helm install <name> ./charts/multi-john -n <namespace> --values charts/multi-john/values.yaml
 ```
 3. Open the Web UI.
 ```shell

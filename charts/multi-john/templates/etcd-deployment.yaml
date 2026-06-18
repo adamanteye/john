@@ -40,7 +40,7 @@ spec:
               containerPort: {{ int .Values.etcd.port }}
             - name: peer
               containerPort: {{ int .Values.etcd.peerPort }}
-          resources: 
+          resources:
               requests:
                 memory: {{ .Values.etcd.requests.memory }}
                 cpu: {{ .Values.etcd.requests.cpu }}

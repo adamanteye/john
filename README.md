@@ -8,7 +8,7 @@ Sporadic releases on Docker hub; `praktiskt/multi-john:latest`.
 
 ## Helm chart
 
-The intended deployment path is Kubernetes via the Helm chart. See the [helm directory](./helm).
+The intended deployment path is Kubernetes via the Helm chart. See [charts/multi-john](./charts/multi-john).
 
 ## How it works
 
